@@ -26,12 +26,14 @@ TEAM = '/squawka/data_panel/game/team[@id="{}"]'
 PLAYER = '/squawka/data_panel/players/player[@id="{}"]'
 HOME = '/squawka/data_panel/game/team[state = "home"]'
 AWAY = '/squawka/data_panel/game/team[state = "away"]'
+GOAL = '/squawka/data_panel/filters/goals_attempts' + \
+       '/time_slice/event[@type="goal" and @team_id="{}"]'
 
 # team_id
-TEAM_ID = ('goal_keeping', 'goals_attempts', 'headed_duals', 'interceptions',
-           'clearances', 'all_passes')
-TEAM = ('tackles', 'crosses', 'corners', 'keepersweeper', 'setpieces',
-        'offside')
+ID_TEAM_ID = ('goal_keeping', 'goals_attempts', 'headed_duals',
+              'interceptions', 'clearances', 'all_passes')
+ID_TEAM = ('tackles', 'crosses', 'corners', 'keepersweeper',
+           'setpieces', 'offside')
 
 
 def _parse_node(node, **kwargs):
@@ -68,7 +70,7 @@ def _parse_attr(attr_key, attr_val, verbose=False):
         return attr_val
 
 
-def _get_team_id(ftype, e):
+def get_team_id(ftype, e):
     if 'team_id' in e:
         return e['team_id']
     else:
@@ -110,6 +112,12 @@ class SquawkaMatch(object):
             msg = "'{}' object has no attribute '{}'"
             raise AttributeError(msg.format(type(self).__name__, name))
 
+    def __repr__(self):
+        date = self.kickoff.strftime('%a %d/%m/%y')
+        home, away = self.score
+        return '{} [{}-{}]; {}; {}'.format(
+            self.name, home, away, self.competition, date)
+
     def _get_filter_events(self, filter_type):
         events, elements = [], self.xml.xpath(EVENTS.format(filter_type))
         if elements is not None:
@@ -134,37 +142,49 @@ class SquawkaMatch(object):
         events = sorted(events, key=lambda e: (e[1]['mins'], e[1]['secs']))
         for idx, (ftype, e) in enumerate(events):
             if ftype == 'goals_attempts':
-                team_id = _get_team_id(ftype, e)
-                if idx == 0:
-                    yield [(ftype, e)]
-                    continue
+                team_id = get_team_id(ftype, e)
                 attempt, ctx_idx = [], idx - 1
-                ctx_ftype, ctx_e = events[ctx_idx]
-                while ctx_idx > 0 and _get_team_id(ctx_ftype, ctx_e) == team_id:
-                    attempt.append((ctx_ftype, ctx_e))
-                    ctx_idx -= 1
+                while ctx_idx > 0:
                     ctx_ftype, ctx_e = events[ctx_idx]
+                    # break on overlapping attempts or possesion change
+                    if ctx_ftype == 'goals_attempts' or \
+                       get_team_id(ctx_ftype, ctx_e) != team_id:
+                        break
+                    # skip unlocated events
+                    elif 'start' not in ctx_e or 'end' not in ctx_e:
+                        ctx_idx -= 1
+                        continue
+                    # record the event
+                    else:
+                        attempt.append((ctx_ftype, ctx_e))
+                        ctx_ftype, ctx_e = events[ctx_idx]
+                        ctx_idx -= 1
                 yield attempt[::-1] + [(ftype, e)]
 
     @cache
     def get_player(self, player_id):
-        node = self.xml.xpath(PLAYER.format(player_id))
-        if len(node) > 0:
-            assert len(node) == 1
-            return _parse_node(node[0])
+        node = self.xml.xpath(PLAYER.format(player_id))[0]
+        return _parse_node(node)
 
     @cache
     def get_team(self, team_id):
-        node = self.xml.xpath(TEAM.format(team_id))
-        if len(node) > 0:
-            assert len(node) == 1
-            return _parse_node(node[0])
+        node = self.xml.xpath(TEAM.format(team_id))[0]
+        return _parse_node(node)
 
     @property
     def filters(self):
         filters = self.xml.xpath('/squawka/data_panel/filters')
-        if len(filters) != 0:
-            return [c.tag for c in filters[0].getchildren()]
+        return [c.tag for c in filters[0].getchildren()]
+
+    @property
+    def name(self):
+        return self.xml.xpath('/squawka/data_panel/game/name/text()')[0]
+
+    @property
+    def score(self):
+        home_goals = self.xml.xpath(GOAL.format(self.team_home['id']))
+        away_goals = self.xml.xpath(GOAL.format(self.team_away['id']))
+        return len(home_goals), len(away_goals)
 
     @property
     def team_home(self):
