@@ -110,10 +110,11 @@ def plot_pitch(pw=12, ph=8):
     return fig
 
 
-def plot_pitch_bokeh(pw=12, ph=8, plot_height=800, plot_width=1200):
+def plot_pitch_bokeh(pw=12, ph=8, plot_height=800, plot_width=1200, title=''):
     fig = figure(
         plot_width=plot_width, plot_height=plot_height,
-        x_range=(0, 1), y_range=(0, 1), background_fill_color='green')
+        x_range=(0, 1), y_range=(0, 1), background_fill_color='green',
+        title=title)
 
     fig.xgrid.grid_line_color, fig.ygrid.grid_line_color = None, None
 
