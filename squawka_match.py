@@ -137,11 +137,13 @@ class SquawkaMatch(object):
             except AttributeError:
                 continue
 
-    def get_attempts(self):
+    def get_attempts(self, filter_goals=False):
         events = list(self.get_timed_events())
         events = sorted(events, key=lambda e: (e[1]['mins'], e[1]['secs']))
         for idx, (ftype, e) in enumerate(events):
             if ftype == 'goals_attempts':
+                if filter_goals and e['type'] != 'goal':
+                    continue
                 team_id = get_team_id(ftype, e)
                 attempt, ctx_idx = [], idx - 1
                 while ctx_idx > 0:
