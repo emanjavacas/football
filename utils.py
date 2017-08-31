@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 from bokeh.plotting import figure
+from bokeh.models import Arrow, NormalHead, ColumnDataSource, LabelSet
 
 
 COMPETITIONS = {
@@ -50,7 +51,7 @@ TIME_SLICE_EVENTS = [
 ]
 
 
-def plot_pitch(pw=12, ph=8):
+def plot_pitch_plt(pw=12, ph=8):
     fig = plt.figure(figsize=(pw, ph))
     ax = fig.add_subplot(1, 1, 1)
     ax.set_facecolor('green')
@@ -110,20 +111,17 @@ def plot_pitch(pw=12, ph=8):
     return fig
 
 
-def plot_pitch_bokeh(pw=12, ph=8, plot_height=800, plot_width=1200, title=''):
+def plot_pitch(pw=12, ph=8, plot_height=800, plot_width=1200, title=''):
     fig = figure(
         plot_width=plot_width, plot_height=plot_height,
         x_range=(0, 1), y_range=(0, 1), background_fill_color='green',
         title=title)
 
     fig.xgrid.grid_line_color, fig.ygrid.grid_line_color = None, None
-
     fig.xaxis.major_tick_line_color = None  # turn off x-axis major ticks
     fig.xaxis.minor_tick_line_color = None  # turn off x-axis minor ticks
-
     fig.yaxis.major_tick_line_color = None  # turn off y-axis major ticks
     fig.yaxis.minor_tick_line_color = None  # turn off y-axis minor ticks
-
     fig.xaxis.major_label_text_font_size = '0pt'  # turn off x-axis tick labels
     fig.yaxis.major_label_text_font_size = '0pt'  # turn off y-axis tick labels
 
@@ -176,6 +174,31 @@ def plot_pitch_bokeh(pw=12, ph=8, plot_height=800, plot_width=1200, title=''):
     return fig
 
 
-if __name__ == '__main__':
-    from bokeh.plotting import show
-    show(plot_pitch_bokeh())
+def add_attempt(fig, attempt):
+    for idx, (ftype, e) in enumerate(attempt):
+        fig.diamond(x=[e['start']['x'] / 100],
+                    y=[e['start']['y'] / 100],
+                    size=10, color="black", line_width=2)
+        arrow_from = 'start'
+        if 'middle' in e:
+            fig.line(x=[e['start']['x']/100, e['middle']['x']/100],
+                     y=[e['start']['y']/100, e['middle']['y']/100],
+                     color='black')
+            arrow_from = 'middle'
+        arrow = Arrow(end=NormalHead(fill_color='black'),
+                      x_start=e[arrow_from]['x'] / 100,
+                      y_start=e[arrow_from]['y'] / 100,
+                      x_end=e['end']['x'] / 100,
+                      y_end=e['end']['y'] / 100)
+        fig.add_layout(arrow)
+
+    source = ColumnDataSource(data={
+        'x': [e['start']['x']/100 for _, e in attempt],
+        'y': [e['start']['y']/100 for _, e in attempt],
+        'idx': [idx for idx in range(len(attempt))]
+    })
+    labels = LabelSet(
+        x='x', y='y', text='idx', level='glyph',
+        x_offset=5, y_offset=-5, source=source, render_mode='canvas')
+
+    fig.add_layout(labels)
