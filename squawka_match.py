@@ -7,6 +7,7 @@ from collections import defaultdict
 from lxml import etree
 
 from utils import TIME_SLICE_EVENTS
+import utils
 
 # regexes
 TS = '(\d+)[^\d]+(\d+)'
@@ -70,25 +71,24 @@ def _parse_attr(attr_key, attr_val, verbose=False):
         return attr_val
 
 
-def get_team_id(ftype, e):
-    if 'team_id' in e:
-        return e['team_id']
-    else:
-        return e['team']
+def _flip_loc(e):
+    if 'start' in e or 'end' in e:
+        e['start']['x'] = 100 - e['start']['x']
+        e['start']['y'] = 100 - e['start']['y']
+        e['end']['x'] = 100 - e['end']['x']
+        e['end']['y'] = 100 - e['end']['y']
+    if 'loc' in e:
+        e['loc']['x'] = 100 - e['loc']['x']
+        e['loc']['y'] = 100 - e['loc']['y']
+    return e
 
 
-def cache(method, prop='_cache'):
-    def wrapper(self, arg, *args):
-        key = method.__name__
-        if not hasattr(self, prop):
-            raise ValueError("Class needs a {} property".format(prop))
-        cached = getattr(self, prop).get(key, {}).get(arg, None)
-        if cached is not None:
-            return cached
-        item = method(self, arg, *args)
-        self._cache[key][arg] = item
-        return item
-    return wrapper
+def maybe_flip(ftype, e, team_id):
+    if utils.get_team_id(e) != team_id:
+        return _flip_loc(e)
+    elif ftype == 'tackles' and e['tackler_team'] != team_id:
+        return _flip_loc(e)
+    return e
 
 
 class SquawkaMatch(object):
@@ -137,38 +137,46 @@ class SquawkaMatch(object):
             except AttributeError:
                 continue
 
-    def get_attempts(self, filter_goals=False):
+    def get_attempts(self, filter_goals=False, breaks=1):
         events = list(self.get_timed_events())
         events = sorted(events, key=lambda e: (e[1]['mins'], e[1]['secs']))
         for idx, (ftype, e) in enumerate(events):
             if ftype == 'goals_attempts':
                 if filter_goals and e['type'] != 'goal':
                     continue
-                team_id = get_team_id(ftype, e)
-                attempt, ctx_idx = [], idx - 1
+                team_id = utils.get_team_id(e)
+                attempt, ctx_idx, ctx_breaks = [], idx - 1, 0
                 while ctx_idx > 0:
                     ctx_ftype, ctx_e = events[ctx_idx]
+                    ctx_breaks += utils.get_team_id(ctx_e) != team_id
                     # break on overlapping attempts or possesion change
-                    if ctx_ftype == 'goals_attempts' or \
-                       get_team_id(ctx_ftype, ctx_e) != team_id:
+                    if ctx_ftype == 'goals_attempts' or ctx_breaks > breaks:
                         break
-                    # skip unlocated events
-                    elif 'start' not in ctx_e or 'end' not in ctx_e:
+                    # skip crosses if overlap with corners
+                    if ctx_ftype == 'crosses' and attempt[-1][0] == 'corners':
+                            ctx_idx -= 1
+                            continue
+                    # skip unlocated or irrelevant events
+                    elif not utils.is_loc(ctx_e) or ctx_ftype == 'extra_heat_maps':
+                        if ctx_ftype != 'extra_heat_maps':
+                            print("Skip unlocated event {}".format(ctx_ftype))
                         ctx_idx -= 1
                         continue
                     # record the event
                     else:
+                        # flip if event belongs to other team
+                        ctx_e = maybe_flip(ctx_ftype, ctx_e, team_id)
                         attempt.append((ctx_ftype, ctx_e))
                         ctx_ftype, ctx_e = events[ctx_idx]
                         ctx_idx -= 1
                 yield attempt[::-1] + [(ftype, e)]
 
-    @cache
+    @utils.cache
     def get_player(self, player_id):
         node = self.xml.xpath(PLAYER.format(player_id))[0]
         return _parse_node(node)
 
-    @cache
+    @utils.cache
     def get_team(self, team_id):
         node = self.xml.xpath(TEAM.format(team_id))[0]
         return _parse_node(node)
