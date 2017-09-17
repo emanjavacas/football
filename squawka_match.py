@@ -95,15 +95,17 @@ class SquawkaMatch(object):
     """
     Class wrapping a squawka xml for easy access.
     """
-    def __init__(self, path):
+    def __init__(self, path_or_string, path=None):
         self._cache = defaultdict(lambda: defaultdict(dict))
-        self.path = path
-        self.xml = self.parse_xml(path)
-
-    @staticmethod
-    def parse_xml(f):
-        with open(f, 'r') as f:
-            return etree.fromstring(bytes(f.read(), 'utf'))
+        if os.path.isfile(path_or_string):
+            self.path = path_or_string
+            with open(path_or_string, 'r') as f:
+                self.xml = etree.fromstring(bytes(f.read(), 'utf'))
+        else:
+            if path is None:
+                raise ValueError("String input needs optional path")
+            self.path = path
+            self.xml = etree.fromstring(bytes(path_or_string, 'utf'))
 
     def __getattr__(self, name):
         if name in TIME_SLICE_EVENTS:
