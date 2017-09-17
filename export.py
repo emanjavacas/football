@@ -19,7 +19,7 @@ def _mongo_export_xGs(output='xGs.csv'):
                         header = list(row.keys())
                         writer.writerow(header)
                     writer.writerow([row[k] for k in header])
-            except:
+            except Exception as e:
                 print("Couldn't parse file: {}".format(doc['url']))
 
 

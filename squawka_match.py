@@ -33,6 +33,8 @@ POSSESION = '/squawka/data_panel/possession/period/' + \
             'time_slice[@name="{}"]/team_possession[@team_id="{}"]/text()'
 POSSESION_IJP = '/squawka/data_panel/possession/period/' + \
                 'time_slice[@name="{}"]/team_possession[@team_id="{}"]/text()'
+GA_RESULT = '/squawka/data_panel/filters/goals_attempts/' + \
+            'time_slice[@name="{}"]/ga_result'
 
 # team_id
 ID_TEAM_ID = ('goal_keeping', 'goals_attempts', 'headed_duals',
@@ -247,19 +249,44 @@ class SquawkaMatch(object):
             (*attempt, (_, ga)), seq = list(attempt), []
             mins, secs, team_id = ga['mins'], ga['secs'], utils.get_team_id(ga)
             injurytime = ga.get("injurytime_play", None)
+            # find if assist, by whom, from where, length, angle, etc.
+            assist_x, assist_y, assist_len, assist_angle = 0., 0., 0., 0.
+            assist_id = None
+            if len(attempt) > 0:
+                last_type, last_e = attempt[-1]
+                if last_type == 'all_passes' and last_e['type'] == 'completed':
+                    assist_x = last_e['start']['x']
+                    assist_y = last_e['start']['y']
+                    assist_id = last_e['player_id']
+                    assist_len = utils.euclidean(
+                        assist_x, assist_y,
+                        last_e['end']['x'], last_e['end']['y'])
+                    if assist_len > 0:
+                        assist_angle = utils.angle(
+                            assist_x, assist_y,
+                            last_e['end']['x'], last_e['end']['y'])
+            # add current score
+            home, away = self.result(ga['mins'], ga['secs'])
+            if ga['team_id'] == self.team_home['id']:
+                attack, defend = home, away
+            else:
+                attack, defend = away, home
             # feats
             feats = {'team_id': ga['team_id'],
                      'player_id': ga['player_id'],
-                     'is_home': ga['team_id'] == self.team_home,
+                     'is_home': ga['team_id'] == self.team_home['id'],
                      'headed': ga.get('headed', False),
                      'is_goal': ga['type'] == 'goal',
                      'distance': utils.euclidean(
                          ga['end']['x'], ga['end']['y'], 100, 50),
                      'possession': self.possession(
                          mins, secs, team_id, injurytime=injurytime),
-                     'angle': utils.get_angle(ga['end']['x'], ga['end']['y']),
-                     'x': seq[-1]['end']['x'],
-                     'y': seq[-1]['end']['y']}
+                     'angle': utils.angle(ga['end']['x'], ga['end']['y']),
+                     'x': ga['end']['x'], 'y': ga['end']['y'],
+                     'assist_x': assist_x, 'assist_y': assist_y,
+                     'assist_angle': assist_angle, 'assist_len': assist_len,
+                     'attack': attack, 'defend': defend,
+                     'assist_id': assist_id}
             # sequential data
             for ftype, e in attempt:
                 if not utils.is_loc(e):  # skip unlocated events
@@ -276,7 +303,6 @@ class SquawkaMatch(object):
                     'team_id': utils.get_team_id(e)})
             yield bg, seq, feats
 
-    @utils.cache
     def possession(self, mins, secs, team_id, injurytime=None):
         """
         Return ball possession of a given team for the previous 5 minutes
@@ -299,6 +325,22 @@ class SquawkaMatch(object):
         weight1 = (mins / 5) + (secs / 60)
         weight0 = ((5 - mins) / 5) + ((60 - secs) / 60)
         return (weight0 * poss0 + weight1 * poss1) / 2
+
+    @utils.cache
+    def result(self, mins, secs):
+        home, away = 0, 0
+        for attempt in self.get_attempts(filter_goals=True, breaks=0):
+            *_, (_, ga) = attempt
+            if ga['mins'] > mins:
+                break
+            else:
+                if ga['secs'] >= secs:
+                    break
+            if utils.get_team_id(ga) == self.team_home['id']:
+                home += 1
+            else:
+                away += 1
+        return home, away
 
     @utils.cache
     def get_player(self, player_id):

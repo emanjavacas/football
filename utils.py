@@ -73,6 +73,14 @@ def euclidean(x1, y1, x2, y2):
     return math.sqrt(((x2 - x1) ** 2) + (abs(y2 - y1) ** 2))
 
 
-def get_angle(x, y):
-    opp, adj = abs(y - 50), 100 - x
-    return math.atan(opp / adj)
+def dot(x1, y1, x2, y2):
+    return x1 * x2 + y1 * y2
+
+def norm(x, y):
+    return math.sqrt(dot(x, y, x, y))
+
+def angle(x1, y1, x2=100, y2=50):
+    y1, y2 = y1 - 50, y2 - 50
+    norm1, norm2 = norm(x1, y1), norm(x2, y2)
+    return math.acos(dot(x1, y1, x2, y2) / (norm1 * norm2))
+
