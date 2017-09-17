@@ -88,6 +88,9 @@ def _flip_loc(e):
 
 
 def _maybe_flip(ftype, e, team_id):
+    """Some events seem to refer to the event coordinates with respect to the
+    opposite team. This function is a heuristic to find out which cases ought
+    to be unflipped"""
     if utils.get_team_id(e) != team_id:
         return _flip_loc(e)
     elif ftype == 'tackles' and e['tackler_team'] != team_id:
@@ -147,9 +150,7 @@ class SquawkaMatch(object):
         return events
 
     def get_timed_events(self):
-        """
-        Return events with time information
-        """
+        """Return events with time information"""
         for f in self.filters:
             try:
                 for event in getattr(self, f):
