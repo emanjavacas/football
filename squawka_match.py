@@ -252,12 +252,14 @@ class SquawkaMatch(object):
                      'player_id': ga['player_id'],
                      'is_home': ga['team_id'] == self.team_home,
                      'headed': ga.get('headed', False),
-                     "is_goal": ga['type'] == 'goal',
+                     'is_goal': ga['type'] == 'goal',
                      'distance': utils.euclidean(
                          ga['end']['x'], ga['end']['y'], 100, 50),
                      'possession': self.possession(
                          mins, secs, team_id, injurytime=injurytime),
-                     'angle': utils.get_angle(ga['end']['x'], ga['end']['y'])}
+                     'angle': utils.get_angle(ga['end']['x'], ga['end']['y']),
+                     'x': seq[-1]['end']['x'],
+                     'y': seq[-1]['end']['y']}
             # sequential data
             for ftype, e in attempt:
                 if not utils.is_loc(e):  # skip unlocated events
