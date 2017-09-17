@@ -1,4 +1,6 @@
 
+import math
+
 
 COMPETITIONS = {
     '4': 'World Cup',
@@ -46,14 +48,14 @@ TIME_SLICE_EVENTS = [
 
 
 def cache(method, prop='_cache'):
-    def wrapper(self, arg, *args):
+    def wrapper(self, arg, *args, **kwargs):
         key = method.__name__
         if not hasattr(self, prop):
             raise ValueError("Class needs a {} property".format(prop))
         cached = getattr(self, prop).get(key, {}).get(arg, None)
         if cached is not None:
             return cached
-        item = method(self, arg, *args)
+        item = method(self, arg, *args, **kwargs)
         self._cache[key][arg] = item
         return item
     return wrapper
@@ -65,3 +67,12 @@ def get_team_id(e):
 
 def is_loc(e):
     return ('start' in e and 'end' in e) or 'loc' in e
+
+
+def euclidean(x1, y1, x2, y2):
+    return math.sqrt(((x2 - x1) ** 2) + (abs(y2 - y1) ** 2))
+
+
+def get_angle(x, y):
+    opp, adj = abs(y - 50), 100 - x
+    return math.atan(opp / adj)

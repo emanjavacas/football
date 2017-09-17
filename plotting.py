@@ -2,7 +2,8 @@
 from collections import defaultdict
 
 from bokeh.plotting import figure
-from bokeh.models import Arrow, NormalHead, ColumnDataSource, LabelSet, HoverTool
+from bokeh.models import Arrow, NormalHead
+from bokeh.models import ColumnDataSource, LabelSet, HoverTool
 
 import utils
 
@@ -102,19 +103,22 @@ def _add_forward(fig, ftype, e, match):
 
 
 def _add_located(fig, ftype, e, match):
-    pass
+    color = _get_team_color(e, match)
+    fig.diamond(x=[e['loc']['x'] / 100], y=[e['loc']['y'] / 100],
+                color=color, size=10, line_width=2)
 
 
 def _add_idxs(fig, attempt, match):
     data = defaultdict(list)
     for idx, (ftype, e) in enumerate(attempt):
-        data['x'].append(e.get('start', e.get('loc'))['x']/100)
-        data['y'].append(e.get('start', e.get('loc'))['y']/100)
+        data['x'].append(e.get('start', e.get('loc'))['x'] / 100)
+        data['y'].append(e.get('start', e.get('loc'))['y'] / 100)
         data['idx'].append(idx)
         data['mins'].append(e['mins'])
         data['secs'].append(e['secs'])
         data['ftype'].append(ftype)
         data['atype'].append(e.get('action_type', ''))
+        data['type'].append(e.get('type', ''))
         data['player'].append(match.get_player(e['player_id'])['name'])
         data['team'].append(match.get_team(utils.get_team_id(e))['long_name'])
     source = ColumnDataSource(data=data)
@@ -123,12 +127,13 @@ def _add_idxs(fig, attempt, match):
         text_color='#d3d3d3', text_font_size='16px', text_font_style='bold',
         x_offset=5, y_offset=-5, source=source, render_mode='css')
     fig.add_layout(labels)
-    renderer = fig.circle(x='x', y='y', source=source)
+    renderer = fig.circle(x='x', y='y', source=source, size=6)
     hover = HoverTool(
         renderers=[renderer], tooltips=[
             ('index', '@idx'), ('(x,y)', '($x, $y)'),
             ('(mins,secs)', '(@mins, @secs)'), ('ftype', '@ftype'),
-            ('atype', '@atype'), ('player', '@player'), ('team', '@team')
+            ('atype', '@atype'), ('type', '@type'),
+            ('player', '@player'), ('team', '@team')
         ])
     fig.add_tools(hover)
 
