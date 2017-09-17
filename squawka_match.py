@@ -334,13 +334,21 @@ class SquawkaMatch(object):
 
     @property
     def competition(self):
-        comp, _ = re.match(COMP_ID, os.path.basename(self.path)).groups()
-        return comp
+        match = re.match(COMP_ID, os.path.basename(self.path))
+        if match is not None:
+            comp, _ = match.groups()
+            return comp
+        # assume url was given as path
+        return re.findall("s3-irl-(.*)\.squawka\.com", self.path)[0]
 
     @property
     def match_id(self):
-        _, match_id = re.match(COMP_ID, os.path.basename(self.path)).groups()
-        return match_id
+        match = re.match(COMP_ID, os.path.basename(self.path))
+        if match is not None:
+            _, match_id = match.groups()
+            return match_id
+        # assume url was given as path
+        return re.findall("ingame/(.*)", self.path)[0]
 
     @property
     def kickoff(self):
