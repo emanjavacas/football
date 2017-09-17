@@ -29,6 +29,10 @@ HOME = '/squawka/data_panel/game/team[state = "home"]'
 AWAY = '/squawka/data_panel/game/team[state = "away"]'
 GOAL = '/squawka/data_panel/filters/goals_attempts' + \
        '/time_slice/event[@type="goal" and @team_id="{}"]'
+POSSESION = '/squawka/data_panel/possession/period/' + \
+            'time_slice[@name="{}"]/team_possession[@team_id="{}"]/text()'
+POSSESION_IJP = '/squawka/data_panel/possession/period/' + \
+                'time_slice[@name="{}"]/team_possession[@team_id="{}"]/text()'
 
 # team_id
 ID_TEAM_ID = ('goal_keeping', 'goals_attempts', 'headed_duals',
@@ -83,10 +87,12 @@ def _flip_loc(e):
     return e
 
 
-def maybe_flip(ftype, e, team_id):
+def _maybe_flip(ftype, e, team_id):
     if utils.get_team_id(e) != team_id:
         return _flip_loc(e)
     elif ftype == 'tackles' and e['tackler_team'] != team_id:
+        return _flip_loc(e)
+    elif ftype == 'fouls' and e['otherplayer_team'] == team_id:
         return _flip_loc(e)
     return e
 
@@ -104,6 +110,16 @@ class SquawkaMatch(object):
     def parse_xml(f):
         with open(f, 'r') as f:
             return etree.fromstring(bytes(f.read(), 'utf'))
+
+    @classmethod
+    def search(cls, dirpath, team1, team2, competition,
+               team_prop='short_name'):
+        for f in os.listdir(dirpath):
+            if f.startswith(competition):
+                m = cls(os.path.join(dirpath, f))
+                h, a = m.team_home[team_prop], m.team_away[team_prop]
+                if (h == team1 and a == team2) or (a == team1 and h == team2):
+                    yield m
 
     def __getattr__(self, name):
         if name in TIME_SLICE_EVENTS:
@@ -129,6 +145,9 @@ class SquawkaMatch(object):
         return events
 
     def get_timed_events(self):
+        """
+        Return events with time information
+        """
         for f in self.filters:
             try:
                 for event in getattr(self, f):
@@ -138,10 +157,21 @@ class SquawkaMatch(object):
                 continue
 
     def get_attempts(self, filter_goals=False, breaks=1):
+        """
+        Return a list of tuples (event_type, {event}) that lead to
+        a goal attempt.
+
+        Parameters:
+        -----------
+        filter_goals: bool, whether to filter for goal events
+        breaks: int (default = 1), maximum number ball possession
+            changes to include in the returned event.
+        """
         events = list(self.get_timed_events())
         events = sorted(events, key=lambda e: (e[1]['mins'], e[1]['secs']))
         for idx, (ftype, e) in enumerate(events):
             if ftype == 'goals_attempts':
+                # filter goals if argument passed
                 if filter_goals and e['type'] != 'goal':
                     continue
                 team_id = utils.get_team_id(e)
@@ -152,24 +182,118 @@ class SquawkaMatch(object):
                     # break on overlapping attempts or possesion change
                     if ctx_ftype == 'goals_attempts' or ctx_breaks > breaks:
                         break
-                    # skip crosses if overlap with corners
-                    if ctx_ftype == 'crosses' and attempt[-1][0] == 'corners':
-                            ctx_idx -= 1
-                            continue
+                    # skip extra heat maps
+                    elif ctx_ftype == 'extra_heat_maps':
+                        ctx_idx -= 1
+                        continue
                     # skip unlocated or irrelevant events
-                    elif not utils.is_loc(ctx_e) or ctx_ftype == 'extra_heat_maps':
-                        if ctx_ftype != 'extra_heat_maps':
-                            print("Skip unlocated event {}".format(ctx_ftype))
+                    elif not utils.is_loc(ctx_e):
                         ctx_idx -= 1
                         continue
                     # record the event
                     else:
                         # flip if event belongs to other team
-                        ctx_e = maybe_flip(ctx_ftype, ctx_e, team_id)
+                        ctx_e = _maybe_flip(ctx_ftype, ctx_e, team_id)
                         attempt.append((ctx_ftype, ctx_e))
                         ctx_ftype, ctx_e = events[ctx_idx]
                         ctx_idx -= 1
                 yield attempt[::-1] + [(ftype, e)]
+
+    def _background_info(self):
+        goals_home, goals_away = self.score
+        return {'competition': self.competition,
+                'match': self.match_id,
+                'kickoff': self.kickoff,
+                'team_home': self.team_home['id'],
+                'team_away': self.team_away['id'],
+                'goals_home': goals_home,
+                'goals_away': goals_away,
+                'year': self.kickoff.year}
+
+    def event_rows(self):
+        """
+        Get match info at the event-level for csv exporting.
+        """
+        bg = self._background_info()
+        for ftype, e in self.get_timed_events():
+            if not utils.is_loc(e):  # skip unlocated events
+                continue
+            bg['x'] = e.get('start', e.get('loc'))['x']
+            bg['y'] = e.get('start', e.get('loc'))['y']
+            bg['end_x'] = e.get('end', {'x': ''})['x']
+            bg['end_y'] = e.get('end', {'y': ''})['y']
+            bg['mins'], bg['secs'] = e['mins'], e['secs']
+            bg['ftype'], bg['type'] = ftype, e.get('type', '')
+            bg['action_type'] = e.get('action_type', '')
+            bg['player_id'] = e['player_id']
+            bg['team_id'] = utils.get_team_id(e)
+            yield bg
+
+    def xGs(self, **kwargs):
+        """
+        Get goal attempts info for xG modelling.
+
+        Returns: generator of (bq, seq, feats)
+        --------
+        bg: dict, background match info (see self._background_info)
+        seq: list, sequence of timed and located events leading to the attempt
+        feats: dict, extracted features from the attempt
+        """
+        bg = self._background_info()
+        for attempt in self.get_attempts(**kwargs):
+            (*attempt, (_, ga)), seq = list(attempt), []
+            mins, secs, team_id = ga['mins'], ga['secs'], utils.get_team_id(ga)
+            injurytime = ga.get("injurytime_play", None)
+            # feats
+            feats = {'team_id': ga['team_id'],
+                     'player_id': ga['player_id'],
+                     'is_home': ga['team_id'] == self.team_home,
+                     'headed': ga.get('headed', False),
+                     "is_goal": ga['type'] == 'goal',
+                     'distance': utils.euclidean(
+                         ga['end']['x'], ga['end']['y'], 100, 50),
+                     'possession': self.possession(
+                         mins, secs, team_id, injurytime=injurytime),
+                     'angle': utils.get_angle(ga['end']['x'], ga['end']['y'])}
+            # sequential data
+            for ftype, e in attempt:
+                if not utils.is_loc(e):  # skip unlocated events
+                    continue
+                seq.append({
+                    'x': e.get('start', e.get('loc'))['x'],
+                    'y': e.get('start', e.get('loc'))['y'],
+                    'end_x': e.get('end', {'x': ''})['x'],
+                    'end_y': e.get('end', {'y': ''})['y'],
+                    'mins': e['mins'], 'secs': e['secs'],
+                    'ftype': ftype, 'type': e.get('type', ''),
+                    'action_type': e.get('action_type', ''),
+                    'player_id': e['player_id'],
+                    'team_id': utils.get_team_id(e)})
+            yield bg, seq, feats
+
+    @utils.cache
+    def possession(self, mins, secs, team_id, injurytime=None):
+        """
+        Return ball possession of a given team for the previous 5 minutes
+        to a given time (`mins`, `secs`) as a weighted mean of the possession
+        in the current and the previous timeslice.
+        """
+        if injurytime is not None:  # get possession from injury_time keyword
+            timeslice = '85 - 90' if mins >= 90 else '40 - 45'
+            xpath = POSSESION_IJP.format(timeslice, team_id, "1")
+            return int(self.xml.xpath(xpath)[0])
+        ts, mins = divmod(mins, 5)
+        timeslice = '{} - {}'.format(ts * 5, (ts + 1) * 5)
+        if ts * 5 >= 90:        # no injury time, return last timeslice
+            return int(self.xml.xpath(POSSESION.format('85 - 90', team_id))[0])
+        poss1 = int(self.xml.xpath(POSSESION.format(timeslice, team_id))[0])
+        if ts == 0:
+            return poss1
+        timeslice = '{} - {}'.format((ts - 1) * 5, ts * 5)
+        poss0 = int(self.xml.xpath(POSSESION.format(timeslice, team_id))[0])
+        weight1 = (mins / 5) + (secs / 60)
+        weight0 = ((5 - mins) / 5) + ((60 - secs) / 60)
+        return (weight0 * poss0 + weight1 * poss1) / 2
 
     @utils.cache
     def get_player(self, player_id):

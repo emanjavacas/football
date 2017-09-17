@@ -2,7 +2,8 @@
 from collections import defaultdict
 
 from bokeh.plotting import figure
-from bokeh.models import Arrow, NormalHead, ColumnDataSource, LabelSet, HoverTool
+from bokeh.models import Arrow, NormalHead
+from bokeh.models import ColumnDataSource, LabelSet, HoverTool
 
 import utils
 
@@ -117,7 +118,7 @@ def _add_idxs(fig, attempt, match):
         data['secs'].append(e['secs'])
         data['ftype'].append(ftype)
         data['atype'].append(e.get('action_type', ''))
-        data['type'].append(e['type'])
+        data['type'].append(e.get('type', ''))
         data['player'].append(match.get_player(e['player_id'])['name'])
         data['team'].append(match.get_team(utils.get_team_id(e))['long_name'])
     source = ColumnDataSource(data=data)
