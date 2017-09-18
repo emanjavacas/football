@@ -92,14 +92,40 @@ def _flip_loc(e):
 def _maybe_flip(ftype, e, team_id):
     """Some events seem to refer to the event coordinates with respect to the
     opposite team. This function is a heuristic to find out which cases ought
-    to be unflipped"""
+    to be unflipped
+
+    match = SquawkaMatch("../../vendor/squawka-scraper/data/laliga_10257.xml")
+    attempt = list(match.get_attempts(filter_goals=False, breaks=3))[0]
+    f1, e1 = attempt[0]
+    f2, e2 = attempt[1]
+    f1 == 'tackles' and f2 == 'fouls'
+    >>> True
+    e1['team'] = '85' and e2['team] == '79'
+    >>> True
+    e1['loc'] == {'x': 22.700000000000003, 'y': 93.4}
+    >>> True
+    e2['loc'] == {'x': 22.7, 'y': 93.4}
+    >>> True
+    """
+    if ftype == 'tackles' and e['tackler_team'] != team_id:
+        return _flip_loc(e)
+    # if ftype == 'fouls' and e['otherplayer_team'] == team_id:
+    #     return _flip_loc(e)
     if utils.get_team_id(e) != team_id:
-        return _flip_loc(e)
-    elif ftype == 'tackles' and e['tackler_team'] != team_id:
-        return _flip_loc(e)
-    elif ftype == 'fouls' and e['otherplayer_team'] == team_id:
+        if ftype == 'fouls':
+            return e
         return _flip_loc(e)
     return e
+
+
+def _get_assist(pass_e):
+    angle = 0.
+    from_x, from_y = pass_e['start']['x'], pass_e['start']['y']
+    to_x, to_y = pass_e['end']['x'], pass_e['end']['y']
+    dist = utils.euclidean(from_x, from_y, to_x, to_y)
+    if dist > 0:
+        angle = utils.angle((from_x, from_y), (to_x, to_y))
+    return from_x, from_y, dist, angle
 
 
 class SquawkaMatch(object):
@@ -250,21 +276,12 @@ class SquawkaMatch(object):
             mins, secs, team_id = ga['mins'], ga['secs'], utils.get_team_id(ga)
             injurytime = ga.get("injurytime_play", None)
             # find if assist, by whom, from where, length, angle, etc.
-            assist_x, assist_y, assist_len, assist_angle = 0., 0., 0., 0.
-            assist_id = None
+            a_id, a_x, a_y, a_dist, a_angle = None, 0., 0., 0., 0.
             if len(attempt) > 0:
                 last_type, last_e = attempt[-1]
                 if last_type == 'all_passes' and last_e['type'] == 'completed':
-                    assist_x = last_e['start']['x']
-                    assist_y = last_e['start']['y']
-                    assist_id = last_e['player_id']
-                    assist_len = utils.euclidean(
-                        assist_x, assist_y,
-                        last_e['end']['x'], last_e['end']['y'])
-                    if assist_len > 0:
-                        assist_angle = utils.angle(
-                            assist_x, assist_y,
-                            last_e['end']['x'], last_e['end']['y'])
+                    a_id = last_e['player_id']
+                    a_x, a_y, a_dist, a_angle = _get_assist(last_e)
             # add current score
             home, away = self.result(ga['mins'], ga['secs'])
             if ga['team_id'] == self.team_home['id']:
@@ -281,12 +298,11 @@ class SquawkaMatch(object):
                          ga['end']['x'], ga['end']['y'], 100, 50),
                      'possession': self.possession(
                          mins, secs, team_id, injurytime=injurytime),
-                     'angle': utils.angle(ga['end']['x'], ga['end']['y']),
+                     'angle': utils.angle((ga['end']['x'], ga['end']['y'])),
                      'x': ga['end']['x'], 'y': ga['end']['y'],
-                     'assist_x': assist_x, 'assist_y': assist_y,
-                     'assist_angle': assist_angle, 'assist_len': assist_len,
-                     'attack': attack, 'defend': defend,
-                     'assist_id': assist_id}
+                     'assist_x': a_x, 'assist_y': a_y, 'assist_id': a_id,
+                     'assist_angle': a_angle, 'assist_dist': a_dist,
+                     'attack': attack, 'defend': defend}
             # sequential data
             for ftype, e in attempt:
                 if not utils.is_loc(e):  # skip unlocated events

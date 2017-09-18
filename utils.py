@@ -69,18 +69,37 @@ def is_loc(e):
     return ('start' in e and 'end' in e) or 'loc' in e
 
 
+def transform_loc(x, y):
+    """Distances are given in percentages (0-100), here we transform
+    into meters by assuming average pitch proportions where length
+    is between (90, 100) == 105 meters and width is (45, 90) == 60"""
+    return x * 1.05, y * 0.6
+
+
 def euclidean(x1, y1, x2, y2):
+    (x1, y1), (x2, y2) = transform_loc(x1, y1), transform_loc(x2, y2)
     return math.sqrt(((x2 - x1) ** 2) + (abs(y2 - y1) ** 2))
 
 
-def dot(x1, y1, x2, y2):
-    return x1 * x2 + y1 * y2
+def dotproduct(v1, v2):
+    return sum((a*b) for a, b in zip(v1, v2))
 
-def norm(x, y):
-    return math.sqrt(dot(x, y, x, y))
 
-def angle(x1, y1, x2=100, y2=50):
-    y1, y2 = y1 - 50, y2 - 50
-    norm1, norm2 = norm(x1, y1), norm(x2, y2)
-    return math.acos(dot(x1, y1, x2, y2) / (norm1 * norm2))
+def length(v):
+    return math.sqrt(dotproduct(v, v))
 
+
+def angle(v1, v2=None, origin=(100, 50)):
+    """Compute angle between two points. Origin defaults to the
+    attacking goal. By default the second point is taken to be the corner
+    closed to v1 along the y axis"""
+    if v2 is None:
+        v2 = (100, 0) if v1[1] <= 50 else (100, 100)
+    v1 = (v1[0] - origin[0], v1[1] - origin[1])
+    v2 = (v2[0] - origin[0], v2[1] - origin[1])
+    v1, v2 = transform_loc(*v1), transform_loc(*v2)
+    return math.acos(dotproduct(v1, v2) / (length(v1) * length(v2)))
+
+
+def to_degrees(radians):
+    return radians * (180 / math.pi)
