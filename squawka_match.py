@@ -300,6 +300,7 @@ class SquawkaMatch(object):
                          mins, secs, team_id, injurytime=injurytime),
                      'angle': utils.angle((ga['end']['x'], ga['end']['y'])),
                      'x': ga['end']['x'], 'y': ga['end']['y'],
+                     'mins': ga['mins'], 'secs': ga['secs'],
                      'assist_x': a_x, 'assist_y': a_y, 'assist_id': a_id,
                      'assist_angle': a_angle, 'assist_dist': a_dist,
                      'attack': attack, 'defend': defend}
