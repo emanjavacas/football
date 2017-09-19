@@ -350,7 +350,7 @@ class SquawkaMatch(object):
             if ga['mins'] > mins:
                 break
             else:
-                if ga['secs'] >= secs:
+                if ga['mins'] == mins and ga['secs'] >= secs:
                     break
             if utils.get_team_id(ga) == self.team_home['id']:
                 home += 1
